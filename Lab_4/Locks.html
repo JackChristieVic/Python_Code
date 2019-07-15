@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<body style="font-family: verdana, sans-serif;font-size: 12px;">
+<p>The sample program that created tons of threads, all trying to increment a global variable "x", didn't work consistently because a statement like:</p>
+<pre>x = x + 1</pre>
+<p>is not actually a single CPU command! A compiler or interpreter expands a command like this into multiple CPU operations. Normally this is fine, but when you have multiple threads all trying to perform these operations concurrently, it can yield unintended results.</p>
+<pre>THREAD 1                         THREAD 2<br />--------                         --------<br />load x to reg A<br />increment reg A               load x to reg B<br />store reg A to x              <br />                              increment reg B<br />                              store reg B to x</pre>
+<p>What happens to memory location "x" when these two threads finish? Because THREAD 2 loaded x into reg B *before* THREAD 1 stored the new value, THREAD 2 sees the same value for x that THREAD 1 did. If x started with value 10, then THREAD 1 finishes and makes x be 11; however, THREAD 2 finishes and stores 11 in memory location x, as well, so even though two threads tried to increment x, the value of x only went from 10 to 11. This is what's happening in the sample program. This is called a "race condition".</p>
+<p>To fix this, programmers have to use a "lock". Now, lock objects are&nbsp;<em>not</em> regular objects like strings or sockets. They have special programming in them that specifically allows them to avoid race conditions. It's not really important to know how locks work -- it involves using a CPU command that can do 2 things at once, like "read" and "set" a register in one command -- but you&nbsp;<em>do</em> need to know how to use them!</p>
+<p>Locks in python are actually very easy to use. The threads have to share a single lock object. This can be a global variable, or it can be a data member of some shared class. For example, in the Manager class of Lab 4, you can create the shared lock as a data member inside that class:</p>
+<pre>def __init__(self, ...):<br />    # ... other stuff<br />    self.lock = threading.Lock()</pre>
+<p>This creates a Lock object and allows any thread to access it through manager methods or the manager object itself.</p>
+<p>Locks have 2 important methods: acquire() and release(). When a thread calls acquire() on a lock, it stops all other threads from also acquiring the lock, until it calls release(). So any time you want to modify some data that is shared between threads, you have to "protect" that operation by acquiring the lock before hand, and then releasing the lock after. So:</p>
+<pre>x = x + 1</pre>
+<p>... becomes:</p>
+<pre>self.lock.acquire()<br />x = x + 1<br />self.lock.release()</pre>
+<p>It is standard practice that anytime you use multiple threads, that you have to be aware of race conditions, and defend against them using locks. (There are other variants of locks, like mutexes and semaphores, all with their own purposes, but at the core you just need locks like the threading.Lock class in Python.)</p>
+<p></p>
+<p>In Lab 4, this is relevant because there are two different threads that access the manager's FIFO queue. Note that the client threads do&nbsp;<em>not</em> access any shared data, so the ClientHandler class doesn't need to worry about locks. However, the main server process has to add new clients to the queue, while the manager's own thread has to access the queue to check the length and remove new clients when appropriate.</p>
+<p>Once you identify data that is shared between threads (and it must be data that is&nbsp;<em>modified</em> -- you don't have to worry about access that only reads values in memory, since no race conditions can occur just from reading data), then you have to go to work to protect every access of that data with a lock.&nbsp;</p>
+<p>So in our lab, this means:</p>
+<ul>
+<li>when the new client is added to the queue</li>
+<li>when the length of the queue is checked</li>
+<li>when the next client is popped from the queue</li>
+</ul>
+<p>You don't necessarily have to put an acquire() / release() pair around each line of code -- if two accesses occur relatively quickly together, you can just put a single acquire() / release() around the entire block. Just be careful not to have a time.sleep() inside an acquire() / release() pair, or any other big processing event, as the efficiency of your program will grind quickly down!!</p>
+</body>
+</html>
